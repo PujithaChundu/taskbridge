@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Edit Task</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="login-card">
+    <h1>Edit Task</h1>
+
+    <form method="POST">
+        <div class="input-group">
+            <label>Title</label>
+            <input type="text" name="title" value="{{ task[0] }}" required>
+        </div>
+
+        <div class="input-group">
+            <label>Description</label>
+            <input type="text" name="description" value="{{ task[1] }}" required>
+        </div>
+
+        <div class="input-group">
+            <label>End Date</label>
+            <input type="date" name="end_date" value="{{ task[2] }}" required>
+        </div>
+
+        <div class="input-group">
+            <label>Status</label>
+            <select name="status" required style="width:100%; padding:12px; border-radius:8px;">
+                <option value="Pending" {% if task[3] == "Pending" %}selected{% endif %}>Pending</option>
+                <option value="In Progress" {% if task[3] == "In Progress" %}selected{% endif %}>In Progress</option>
+                <option value="Completed" {% if task[3] == "Completed" %}selected{% endif %}>Completed</option>
+            </select>
+        </div>
+
+        <div class="input-group">
+            <label>Assign To</label>
+            <select name="assigned_to" required style="width:100%; padding:12px; border-radius:8px;">
+                {% for emp in employees %}
+                    <option value="{{ emp[0] }}" {% if emp[0] == task[4] %}selected{% endif %}>
+                        {{ emp[0] }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <button type="submit">Save Changes</button>
+        <br><br>
+        <button type="button" onclick="window.location.href='/admin-tasks'">Cancel</button>
+    </form>
+</div>
+
+</body>
+</html>

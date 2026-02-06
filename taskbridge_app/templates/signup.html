@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>TaskBridge Signup</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="login-card">
+    <h1>Create an Account</h1>
+    <p>Signup for TaskBridge</p>
+
+    <form method="POST">
+        <div class="input-group">
+            <label>Email</label>
+            <input type="email" name="email" required>
+        </div>
+
+        <div class="input-group">
+            <label>Password</label>
+            <input type="password" name="password" required>
+        </div>
+
+        <div class="input-group">
+            <label>Account Type</label>
+            <select name="role" id="role" onchange="toggleKey()" style="width:100%; padding:12px; border-radius:8px;">
+                <option value="user">User</option>
+                <option value="admin">Admin</option>
+            </select>
+        </div>
+
+        <div class="input-group" id="adminKeyBox" style="display:none;">
+            <label>Admin Secret Key</label>
+            <input type="text" name="admin_key" placeholder="Enter admin key">
+        </div>
+
+        <button type="submit">Create Account</button>
+
+        <div class="links">
+            <a href="/">Already have an account?</a>
+        </div>
+    </form>
+</div>
+
+<script>
+function toggleKey() {
+    const role = document.getElementById("role").value;
+    document.getElementById("adminKeyBox").style.display = 
+        role === "admin" ? "block" : "none";
+}
+</script>
+
+</body>
+</html>

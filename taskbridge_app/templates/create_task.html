@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Create Task</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="login-card">
+    <h1>Create Task</h1>
+
+    <form method="POST" enctype="multipart/form-data">
+        <div class="input-group">
+            <label>Title</label>
+            <input type="text" name="title" required>
+        </div>
+
+        <div class="input-group">
+            <label>Description</label>
+            <input type="text" name="description" required>
+        </div>
+
+        <div class="input-group">
+            <label>End Date</label>
+            <input type="date" name="end_date" required>
+        </div>
+
+        <div class="input-group">
+            <label>Assign To (Employee Email)</label>
+            <select name="assigned_to" required style="width:100%; padding:12px; border-radius:8px;">
+                <option value="">-- Select Employee --</option>
+                {% for emp in employees %}
+                    <option value="{{ emp[0] }}">{{ emp[0] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="input-group">
+            <label>Attachment (Optional)</label>
+            <input type="file" name="attachment">
+        </div>
+
+        <button type="submit">Create Task</button>
+        <br><br>
+        <button type="button" onclick="window.location.href='/admin-dashboard'">Back</button>
+    </form>
+</div>
+
+</body>
+</html>

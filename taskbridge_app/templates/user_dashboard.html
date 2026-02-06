@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>User Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="login-card" style="width:90%; max-width:1000px;">
+    <h1>User Dashboard</h1>
+    <p>My Tasks</p>
+
+    {% if tasks %}
+        <table border="1" cellpadding="10" cellspacing="0" width="100%">
+            <tr>
+                <th>Title</th>
+                <th>Description</th>
+                <th>Deadline</th>
+                <th>Status</th>
+                <th>Attachment</th>
+                <th>Update Status</th>
+            </tr>
+
+            {% for task in tasks %}
+            <tr>
+                <td>{{ task[1] }}</td>
+                <td>{{ task[2] }}</td>
+                <td>{{ task[3] }}</td>
+                <td>{{ task[4] }}</td>
+                <td>
+                    {% if task[5] %}
+                        <a href="/uploads/{{ task[5] }}" target="_blank">Download</a>
+                    {% else %}
+                        —
+                    {% endif %}
+                </td>
+                <td>
+                    <form method="POST" action="/update-task-status">
+                        <input type="hidden" name="task_id" value="{{ task[0] }}">
+                        <select name="status" required>
+                            <option value="Pending" {% if task[4] == "Pending" %}selected{% endif %}>Pending</option>
+                            <option value="In Progress" {% if task[4] == "In Progress" %}selected{% endif %}>In Progress</option>
+                            <option value="Completed" {% if task[4] == "Completed" %}selected{% endif %}>Completed</option>
+                        </select>
+                        <br><br>
+                        <button type="submit">Update</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    {% else %}
+        <p>No tasks assigned to you.</p>
+    {% endif %}
+
+    <br>
+    <button onclick="window.location.href='/logout'">Logout</button>
+</div>
+
+</body>
+</html>

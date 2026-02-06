@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="login-card">
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div style="background:#d4edda; color:#155724; padding:10px; border-radius:8px; margin-bottom:15px;">
+          {{ messages[0] }}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <h1>Admin Dashboard</h1>
+    <p>Welcome Manager</p>
+
+    <button onclick="window.location.href='/create-task'">Create Task</button>
+    <br><br>
+    <button onclick="window.location.href='/admin-tasks'">View All Tasks</button>
+    <br><br>
+    <button onclick="window.location.href='/logout'">Logout</button>
+</div>
+
+</body>
+</html>

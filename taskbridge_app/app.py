@@ -359,5 +359,9 @@ def uploaded_file(filename):
 # =========================
 # RUN
 # =========================
+@app.route("/health")
+def health():
+    return "OK"
 if __name__ == "__main__":
     app.run(debug=True)
+

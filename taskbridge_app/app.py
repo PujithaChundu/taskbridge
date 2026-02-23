@@ -1,8 +1,7 @@
 from flask import Flask, render_template, request, redirect, session, send_from_directory, flash
 import os
 import psycopg2
-import smtplib
-from email.mime.text import MIMEText
+import requests
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "taskbridge-secret-key")
@@ -16,9 +15,6 @@ if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
 ADMIN_SECRET_KEY = os.getenv("ADMIN_SECRET_KEY", "TASKBRIDGE-ADMIN-2024")
-
-EMAIL_SENDER = os.getenv("EMAIL_SENDER", "a75711100@gmail.com")
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "ksbphgozpssqkmoe")  # app password
 
 # =========================
 # DATABASE CONNECTION
@@ -63,33 +59,54 @@ def init_db():
 init_db()
 
 # =========================
-# EMAIL FUNCTIONS
+# EMAIL FUNCTIONS (RESEND)
 # =========================
 def send_welcome_email(to_email, role):
-    msg = MIMEText(f"Welcome to TaskBridge! You signed up as {role}.")
-    msg["Subject"] = "Welcome to TaskBridge!"
-    msg["From"] = EMAIL_SENDER
-    msg["To"] = to_email
-    try:
-        server = smtplib.SMTP_SSL("smtp.gmail.com", 465)
-        server.login(EMAIL_SENDER, EMAIL_PASSWORD)
-        server.sendmail(EMAIL_SENDER, to_email, msg.as_string())
-        server.quit()
-    except Exception as e:
-        print("Email error:", e)
+    api_key = os.getenv("RESEND_API_KEY")
+    if not api_key:
+        print("No RESEND_API_KEY set")
+        return
+
+    url = "https://api.resend.com/emails"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "from": "TaskBridge <onboarding@resend.dev>",
+        "to": [to_email],
+        "subject": "Welcome to TaskBridge!",
+        "html": f"<p>Welcome to TaskBridge! You signed up as <b>{role}</b>.</p>"
+    }
+
+    r = requests.post(url, json=data, headers=headers)
+    print("Resend response:", r.text)
+
 
 def send_task_assign_email(to_email, title, description, end_date):
-    msg = MIMEText(f"New task assigned:\n\nTitle: {title}\nDescription: {description}\nDeadline: {end_date}")
-    msg["Subject"] = "New Task Assigned"
-    msg["From"] = EMAIL_SENDER
-    msg["To"] = to_email
-    try:
-        server = smtplib.SMTP_SSL("smtp.gmail.com", 465)
-        server.login(EMAIL_SENDER, EMAIL_PASSWORD)
-        server.sendmail(EMAIL_SENDER, to_email, msg.as_string())
-        server.quit()
-    except Exception as e:
-        print("Email error:", e)
+    api_key = os.getenv("RESEND_API_KEY")
+    if not api_key:
+        print("No RESEND_API_KEY set")
+        return
+
+    url = "https://api.resend.com/emails"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "from": "TaskBridge <onboarding@resend.dev>",
+        "to": [to_email],
+        "subject": "New Task Assigned",
+        "html": f"""
+        <p><b>Title:</b> {title}</p>
+        <p><b>Description:</b> {description}</p>
+        <p><b>Deadline:</b> {end_date}</p>
+        """
+    }
+
+    r = requests.post(url, json=data, headers=headers)
+    print("Resend response:", r.text)
 
 # =========================
 # LOGIN

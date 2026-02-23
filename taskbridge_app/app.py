@@ -1,32 +1,43 @@
 from flask import Flask, render_template, request, redirect, session, send_from_directory, flash
 import os
-import sqlite3
+import psycopg2
 import smtplib
 from email.mime.text import MIMEText
 
 app = Flask(__name__)
-app.secret_key = "taskbridge-secret-key"
+app.secret_key = os.getenv("SECRET_KEY", "taskbridge-secret-key")
 
+# =========================
+# CONFIG
+# =========================
 UPLOAD_FOLDER = "uploads"
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
-ADMIN_SECRET_KEY = "TASKBRIDGE-ADMIN-2024"
+ADMIN_SECRET_KEY = os.getenv("ADMIN_SECRET_KEY", "TASKBRIDGE-ADMIN-2024")
 
-EMAIL_SENDER = "a75711100@gmail.com"
-EMAIL_PASSWORD = "ksbphgozpssqkmoe"
+EMAIL_SENDER = os.getenv("EMAIL_SENDER", "a75711100@gmail.com")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "ksbphgozpssqkmoe")  # app password
+
+# =========================
+# DATABASE CONNECTION
+# =========================
+def get_db_connection():
+    database_url = os.getenv("DATABASE_URL")
+    conn = psycopg2.connect(database_url)
+    return conn
 
 # =========================
 # DATABASE INIT
 # =========================
 def init_db():
-    conn = sqlite3.connect("database.db")
+    conn = get_db_connection()
     cursor = conn.cursor()
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             email TEXT UNIQUE,
             password TEXT,
             role TEXT
@@ -35,7 +46,7 @@ def init_db():
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS tasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             title TEXT,
             description TEXT,
             end_date TEXT,
@@ -54,19 +65,6 @@ init_db()
 # =========================
 # EMAIL FUNCTIONS
 # =========================
-def send_reset_email(to_email, reset_link):
-    msg = MIMEText(f"Reset your password here:\n{reset_link}")
-    msg["Subject"] = "TaskBridge Password Reset"
-    msg["From"] = EMAIL_SENDER
-    msg["To"] = to_email
-    try:
-        server = smtplib.SMTP_SSL("smtp.gmail.com", 465)
-        server.login(EMAIL_SENDER, EMAIL_PASSWORD)
-        server.sendmail(EMAIL_SENDER, to_email, msg.as_string())
-        server.quit()
-    except Exception as e:
-        print("Email error:", e)
-
 def send_welcome_email(to_email, role):
     msg = MIMEText(f"Welcome to TaskBridge! You signed up as {role}.")
     msg["Subject"] = "Welcome to TaskBridge!"
@@ -81,7 +79,7 @@ def send_welcome_email(to_email, role):
         print("Email error:", e)
 
 def send_task_assign_email(to_email, title, description, end_date):
-    msg = MIMEText(f"New task:\n{title}\n{description}\nDeadline: {end_date}")
+    msg = MIMEText(f"New task assigned:\n\nTitle: {title}\nDescription: {description}\nDeadline: {end_date}")
     msg["Subject"] = "New Task Assigned"
     msg["From"] = EMAIL_SENDER
     msg["To"] = to_email
@@ -102,9 +100,9 @@ def login():
         email = request.form["email"]
         password = request.form["password"]
 
-        conn = sqlite3.connect("database.db")
+        conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT role FROM users WHERE email=? AND password=?", (email, password))
+        cursor.execute("SELECT role FROM users WHERE email=%s AND password=%s", (email, password))
         user = cursor.fetchone()
         conn.close()
 
@@ -136,21 +134,25 @@ def signup():
 
         if role == "admin" and admin_key != ADMIN_SECRET_KEY:
             flash("❌ Invalid Admin Secret Key", "error")
-            return redirect("/")
+            return redirect("/signup")
 
         try:
-            conn = sqlite3.connect("database.db")
+            conn = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute("INSERT INTO users (email, password, role) VALUES (?, ?, ?)", (email, password, role))
+            cursor.execute(
+                "INSERT INTO users (email, password, role) VALUES (%s, %s, %s)",
+                (email, password, role)
+            )
             conn.commit()
             conn.close()
 
             send_welcome_email(email, role)
             flash("✅ Account created successfully! Please login.", "success")
             return redirect("/")
-        except:
+        except Exception as e:
+            print(e)
             flash("❌ This email is already registered.", "error")
-            return redirect("/")
+            return redirect("/signup")
 
     return render_template("signup.html")
 
@@ -177,23 +179,47 @@ def user_dashboard():
     if "user_email" not in session:
         return redirect("/")
 
-    conn = sqlite3.connect("database.db")
+    conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, title, description, end_date, status, attachment FROM tasks WHERE assigned_to=?", (session["user_email"],))
+    cursor.execute(
+        "SELECT id, title, description, end_date, status, attachment FROM tasks WHERE assigned_to=%s",
+        (session["user_email"],)
+    )
     tasks = cursor.fetchall()
     conn.close()
 
     return render_template("user_dashboard.html", tasks=tasks)
 
 # =========================
-# CREATE TASK
+# UPDATE TASK STATUS (USER)
+# =========================
+@app.route("/update-task-status", methods=["POST"])
+def update_task_status():
+    if "user_email" not in session:
+        flash("❌ Please login again.", "error")
+        return redirect("/")
+
+    task_id = request.form["task_id"]
+    new_status = request.form["status"]
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE tasks SET status=%s WHERE id=%s", (new_status, task_id))
+    conn.commit()
+    conn.close()
+
+    flash("✅ Task status updated!", "success")
+    return redirect("/user-dashboard")
+
+# =========================
+# CREATE TASK (ADMIN)
 # =========================
 @app.route("/create-task", methods=["GET", "POST"])
 def create_task():
     if "user_role" not in session or session["user_role"] != "admin":
         return redirect("/")
 
-    conn = sqlite3.connect("database.db")
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT email FROM users WHERE role='user'")
     employees = cursor.fetchall()
@@ -203,8 +229,6 @@ def create_task():
         description = request.form["description"]
         end_date = request.form["end_date"]
         assigned_to = request.form["assigned_to"]
-        status = "Pending"
-        created_by = "admin"
 
         file = request.files.get("attachment")
         filename = None
@@ -214,21 +238,102 @@ def create_task():
 
         cursor.execute("""
             INSERT INTO tasks (title, description, end_date, status, assigned_to, created_by, attachment)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (title, description, end_date, status, assigned_to, created_by, filename))
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (title, description, end_date, "Pending", assigned_to, "admin", filename))
 
         conn.commit()
         conn.close()
 
         send_task_assign_email(assigned_to, title, description, end_date)
         flash("✅ Task created successfully!", "success")
-        return redirect("/")
+        return redirect("/admin-dashboard")
 
     conn.close()
     return render_template("create_task.html", employees=employees)
 
 # =========================
-# FILES
+# ADMIN - VIEW ALL TASKS
+# =========================
+@app.route("/admin-tasks")
+def admin_tasks():
+    if "user_role" not in session or session["user_role"] != "admin":
+        return redirect("/")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, title, description, end_date, status, assigned_to, attachment FROM tasks")
+    tasks = cursor.fetchall()
+    conn.close()
+
+    return render_template("admin_tasks.html", tasks=tasks)
+
+# =========================
+# DELETE TASK
+# =========================
+@app.route("/delete-task/<int:task_id>")
+def delete_task(task_id):
+    if "user_role" not in session or session["user_role"] != "admin":
+        return redirect("/")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM tasks WHERE id=%s", (task_id,))
+    conn.commit()
+    conn.close()
+
+    flash("🗑️ Task deleted successfully!", "success")
+    return redirect("/admin-tasks")
+
+# =========================
+# EDIT TASK
+# =========================
+@app.route("/edit-task/<int:task_id>", methods=["GET", "POST"])
+def edit_task(task_id):
+    if "user_role" not in session or session["user_role"] != "admin":
+        return redirect("/")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if request.method == "POST":
+        title = request.form["title"]
+        description = request.form["description"]
+        end_date = request.form["end_date"]
+        status = request.form["status"]
+        assigned_to = request.form["assigned_to"]
+
+        cursor.execute("SELECT attachment FROM tasks WHERE id=%s", (task_id,))
+        old_file = cursor.fetchone()[0]
+
+        file = request.files.get("attachment")
+        filename = old_file
+        if file and file.filename:
+            filename = file.filename
+            file.save(os.path.join(app.config["UPLOAD_FOLDER"], filename))
+
+        cursor.execute("""
+            UPDATE tasks
+            SET title=%s, description=%s, end_date=%s, status=%s, assigned_to=%s, attachment=%s
+            WHERE id=%s
+        """, (title, description, end_date, status, assigned_to, filename, task_id))
+
+        conn.commit()
+        conn.close()
+
+        flash("✏️ Task updated successfully!", "success")
+        return redirect("/admin-tasks")
+
+    cursor.execute("SELECT title, description, end_date, status, assigned_to, attachment FROM tasks WHERE id=%s", (task_id,))
+    task = cursor.fetchone()
+
+    cursor.execute("SELECT email FROM users WHERE role='user'")
+    employees = cursor.fetchall()
+
+    conn.close()
+    return render_template("edit_task.html", task=task, task_id=task_id, employees=employees)
+
+# =========================
+# FILE SERVING
 # =========================
 @app.route("/uploads/<filename>")
 def uploaded_file(filename):

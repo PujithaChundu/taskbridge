@@ -360,8 +360,41 @@ def uploaded_file(filename):
 def forgot_password():
     if request.method == "POST":
         email = request.form["email"]
-        flash("If this email exists, a reset link will be sent.", "info")
+
+        # Check if user exists
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM users WHERE email=%s", (email,))
+        user = cursor.fetchone()
+        conn.close()
+
+        if not user:
+            flash("❌ Email not found", "error")
+            return redirect("/forgot-password")
+
+        # Create a fake reset link for now (we'll make it real later)
+        reset_link = "https://taskbridge-819w.onrender.com/"
+
+        # Send email using Resend
+        api_key = os.getenv("RESEND_API_KEY")
+        url = "https://api.resend.com/emails"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        data = {
+            "from": "TaskBridge <onboarding@resend.dev>",
+            "to": [email],
+            "subject": "Reset your TaskBridge password",
+            "html": f"<p>Click here to reset your password:</p><p><a href='{reset_link}'>{reset_link}</a></p>"
+        }
+
+        response = requests.post(url, json=data, headers=headers)
+        print("Resend response:", response.text)
+
+        flash("✅ Reset email sent! Check your inbox.", "success")
         return redirect("/")
+
     return render_template("forgot_password.html")
 # =========================
 # RUN
@@ -371,5 +404,6 @@ def health():
     return "OK"
 if __name__ == "__main__":
     app.run(debug=True)
+
 
 

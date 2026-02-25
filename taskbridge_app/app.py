@@ -356,6 +356,13 @@ def edit_task(task_id):
 def uploaded_file(filename):
     return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
 
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if request.method == "POST":
+        email = request.form["email"]
+        flash("If this email exists, a reset link will be sent.", "info")
+        return redirect("/")
+    return render_template("forgot_password.html")
 # =========================
 # RUN
 # =========================
@@ -364,4 +371,5 @@ def health():
     return "OK"
 if __name__ == "__main__":
     app.run(debug=True)
+
 

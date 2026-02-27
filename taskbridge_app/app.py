@@ -54,6 +54,16 @@ def init_db():
         )
     """)
 
+    # NEW TABLE FOR RESET TOKENS
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS password_resets (
+            id SERIAL PRIMARY KEY,
+            email TEXT,
+            token TEXT,
+            expires_at TIMESTAMP
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -168,17 +178,22 @@ def forgot_password():
         cursor = conn.cursor()
         cursor.execute("SELECT id FROM users WHERE email=%s", (email,))
         user = cursor.fetchone()
-        conn.close()
 
         if not user:
+            conn.close()
             flash("Email not found")
             return redirect("/forgot-password")
 
         token = secrets.token_urlsafe(32)
-        reset_tokens[token] = {
-            "email": email,
-            "expires": datetime.utcnow() + timedelta(minutes=30)
-        }
+        expires_at = datetime.utcnow() + timedelta(minutes=30)
+
+        # Store token in DB
+        cursor.execute(
+            "INSERT INTO password_resets (email, token, expires_at) VALUES (%s, %s, %s)",
+            (email, token, expires_at)
+        )
+        conn.commit()
+        conn.close()
 
         reset_link = f"https://taskbridge-819w.onrender.com/reset-password/{token}"
 
@@ -198,28 +213,50 @@ def forgot_password():
 # =========================
 @app.route("/reset-password/<token>", methods=["GET", "POST"])
 def reset_password(token):
-    data = reset_tokens.get(token)
 
-    if not data or data["expires"] < datetime.utcnow():
-        return "Invalid or expired link"
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT email, expires_at FROM password_resets WHERE token=%s",
+        (token,)
+    )
+    record = cursor.fetchone()
+
+    if not record:
+        conn.close()
+        return "Invalid reset link"
+
+    email, expires_at = record
+
+    if datetime.utcnow() > expires_at:
+        cursor.execute("DELETE FROM password_resets WHERE token=%s", (token,))
+        conn.commit()
+        conn.close()
+        return "Reset link expired"
 
     if request.method == "POST":
         new_password = request.form["password"]
-        email = data["email"]
 
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("UPDATE users SET password=%s WHERE email=%s", (new_password, email))
+        cursor.execute(
+            "UPDATE users SET password=%s WHERE email=%s",
+            (new_password, email)
+        )
+
+        # Delete token after use
+        cursor.execute(
+            "DELETE FROM password_resets WHERE token=%s",
+            (token,)
+        )
+
         conn.commit()
         conn.close()
 
-        reset_tokens.pop(token, None)
-
-        flash("Password updated! Please login.")
+        flash("Password updated successfully!")
         return redirect("/")
 
+    conn.close()
     return render_template("reset_password.html")
-
 # =========================
 # DASHBOARDS
 # =========================
@@ -265,3 +302,4 @@ def health():
 # =========================
 if __name__ == "__main__":
     app.run(debug=True)
+

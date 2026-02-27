@@ -8,9 +8,6 @@ from datetime import datetime, timedelta
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "taskbridge-secret-key")
 
-# =========================
-# CONFIG
-# =========================
 UPLOAD_FOLDER = "uploads"
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 if not os.path.exists(UPLOAD_FOLDER):
@@ -19,15 +16,11 @@ if not os.path.exists(UPLOAD_FOLDER):
 ADMIN_SECRET_KEY = os.getenv("ADMIN_SECRET_KEY", "TASKBRIDGE-ADMIN-2024")
 
 # =========================
-# DATABASE CONNECTION
+# DATABASE
 # =========================
 def get_db_connection():
-    database_url = os.getenv("DATABASE_URL")
-    return psycopg2.connect(database_url)
+    return psycopg2.connect(os.getenv("DATABASE_URL"))
 
-# =========================
-# DATABASE INIT
-# =========================
 def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -54,7 +47,6 @@ def init_db():
         )
     """)
 
-    # NEW TABLE FOR RESET TOKENS
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS password_resets (
             id SERIAL PRIMARY KEY,
@@ -70,17 +62,12 @@ def init_db():
 init_db()
 
 # =========================
-# RESET TOKEN STORAGE
-# =========================
-reset_tokens = {}
-
-# =========================
-# EMAIL FUNCTION
+# EMAIL
 # =========================
 def send_email(to_email, subject, html_content):
     api_key = os.getenv("RESEND_API_KEY")
     if not api_key:
-        print("No RESEND_API_KEY set")
+        print("RESEND_API_KEY missing")
         return
 
     url = "https://api.resend.com/emails"
@@ -97,6 +84,15 @@ def send_email(to_email, subject, html_content):
 
     response = requests.post(url, json=data, headers=headers)
     print("Email response:", response.text)
+
+def send_task_assignment_email(to_email, title, description, end_date):
+    html = f"""
+    <h3>New Task Assigned</h3>
+    <p><b>Title:</b> {title}</p>
+    <p><b>Description:</b> {description}</p>
+    <p><b>Deadline:</b> {end_date}</p>
+    """
+    send_email(to_email, "New Task Assigned - TaskBridge", html)
 
 # =========================
 # LOGIN
@@ -116,14 +112,10 @@ def login():
         if user:
             session["user_email"] = email
             session["user_role"] = user[0]
+            return redirect("/admin-dashboard" if user[0] == "admin" else "/user-dashboard")
 
-            if user[0] == "admin":
-                return redirect("/admin-dashboard")
-            else:
-                return redirect("/user-dashboard")
-        else:
-            flash("Invalid email or password")
-            return redirect("/")
+        flash("Invalid email or password")
+        return redirect("/")
 
     return render_template("login.html")
 
@@ -152,11 +144,8 @@ def signup():
             conn.commit()
             conn.close()
 
-            send_email(
-                email,
-                "Welcome to TaskBridge!",
-                f"<p>Welcome! You signed up as <b>{role}</b>.</p>"
-            )
+            send_email(email, "Welcome to TaskBridge!",
+                       f"<p>Welcome! You signed up as <b>{role}</b>.</p>")
 
             flash("Account created successfully!")
             return redirect("/")
@@ -167,105 +156,43 @@ def signup():
     return render_template("signup.html")
 
 # =========================
-# FORGOT PASSWORD
+# CREATE TASK (ADMIN)
 # =========================
-@app.route("/forgot-password", methods=["GET", "POST"])
-def forgot_password():
-    if request.method == "POST":
-        email = request.form["email"]
-
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT id FROM users WHERE email=%s", (email,))
-        user = cursor.fetchone()
-
-        if not user:
-            conn.close()
-            flash("Email not found")
-            return redirect("/forgot-password")
-
-        token = secrets.token_urlsafe(32)
-        expires_at = datetime.utcnow() + timedelta(minutes=30)
-
-        # Store token in DB
-        cursor.execute(
-            "INSERT INTO password_resets (email, token, expires_at) VALUES (%s, %s, %s)",
-            (email, token, expires_at)
-        )
-        conn.commit()
-        conn.close()
-
-        reset_link = f"https://taskbridge-819w.onrender.com/reset-password/{token}"
-
-        send_email(
-            email,
-            "Reset your TaskBridge password",
-            f"<p>Click below to reset your password:</p><p><a href='{reset_link}'>{reset_link}</a></p>"
-        )
-
-        flash("Reset link sent to your email")
+@app.route("/create-task", methods=["GET", "POST"])
+def create_task():
+    if session.get("user_role") != "admin":
         return redirect("/")
-
-    return render_template("forgot_password.html")
-
-# =========================
-# RESET PASSWORD
-# =========================
-@app.route("/reset-password/<token>", methods=["GET", "POST"])
-def reset_password(token):
 
     conn = get_db_connection()
     cursor = conn.cursor()
-
-    cursor.execute(
-        "SELECT email, expires_at FROM password_resets WHERE token=%s",
-        (token,)
-    )
-    record = cursor.fetchone()
-
-    if not record:
-        conn.close()
-        return "Invalid reset link"
-
-    email, expires_at = record
-
-    if datetime.utcnow() > expires_at:
-        cursor.execute("DELETE FROM password_resets WHERE token=%s", (token,))
-        conn.commit()
-        conn.close()
-        return "Reset link expired"
+    cursor.execute("SELECT email FROM users WHERE role='user'")
+    employees = cursor.fetchall()
 
     if request.method == "POST":
-        new_password = request.form["password"]
+        title = request.form["title"]
+        description = request.form["description"]
+        end_date = request.form["end_date"]
+        assigned_to = request.form["assigned_to"]
 
-        cursor.execute(
-            "UPDATE users SET password=%s WHERE email=%s",
-            (new_password, email)
-        )
-
-        # Delete token after use
-        cursor.execute(
-            "DELETE FROM password_resets WHERE token=%s",
-            (token,)
-        )
+        cursor.execute("""
+            INSERT INTO tasks (title, description, end_date, status, assigned_to, created_by)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (title, description, end_date, "Pending", assigned_to, "admin"))
 
         conn.commit()
         conn.close()
 
-        flash("Password updated successfully!")
-        return redirect("/")
+        send_task_assignment_email(assigned_to, title, description, end_date)
+
+        flash("Task created successfully!")
+        return redirect("/admin-dashboard")
 
     conn.close()
-    return render_template("reset_password.html")
-# =========================
-# DASHBOARDS
-# =========================
-@app.route("/admin-dashboard")
-def admin_dashboard():
-    if session.get("user_role") != "admin":
-        return redirect("/")
-    return render_template("admin_dashboard.html")
+    return render_template("create_task.html", employees=employees)
 
+# =========================
+# USER DASHBOARD
+# =========================
 @app.route("/user-dashboard")
 def user_dashboard():
     if "user_email" not in session:
@@ -274,13 +201,22 @@ def user_dashboard():
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT id, title, description, end_date, status, attachment FROM tasks WHERE assigned_to=%s",
+        "SELECT id, title, description, end_date, status FROM tasks WHERE assigned_to=%s",
         (session["user_email"],)
     )
     tasks = cursor.fetchall()
     conn.close()
 
     return render_template("user_dashboard.html", tasks=tasks)
+
+# =========================
+# ADMIN DASHBOARD
+# =========================
+@app.route("/admin-dashboard")
+def admin_dashboard():
+    if session.get("user_role") != "admin":
+        return redirect("/")
+    return render_template("admin_dashboard.html")
 
 # =========================
 # LOGOUT
@@ -291,15 +227,11 @@ def logout():
     return redirect("/")
 
 # =========================
-# HEALTH CHECK
+# HEALTH
 # =========================
 @app.route("/health")
 def health():
     return "OK"
 
-# =========================
-# RUN
-# =========================
 if __name__ == "__main__":
     app.run(debug=True)
-
